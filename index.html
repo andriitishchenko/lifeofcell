@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Life of Cells</title>
+</head>
+
+<body>
+    <div>
+        Duration:<span id="duration"></span> cells: <span id="cellcount"></span>
+    </div>
+    <canvas id="canvas" width="700" height="700"></canvas>
+    <div>
+        <input type="button" value="Continue" onclick="onConlinueClick()">
+        <input type="button" value="Cells" onclick="showCells()">
+        <input type="button" value="Cells Energy" onclick="showMap(MapLayout.ENERGY)">
+        <input type="button" value="Map Pollution" onclick="showMap(MapLayout.POLLUTION)">
+    </div>
+    <div id="worldcell_info"></div>
+
+    <script>
+        let l_duration = document.getElementById("duration");
+        let l_cellcount = document.getElementById("cellcount");
+        let l_worldcell_info = document.getElementById("worldcell_info");
+
+        let canvas = document.getElementById("canvas");
+        let ctx = canvas.getContext("2d");
+
+
+
+        function showCells() {
+            world.switchMapState(WorldMapState.SHOWCELL);
+        }
+
+        function showMap(layout) {
+            world.switchMapState(WorldMapState.SHOWMAP, layout);
+        }
+
+        function onConlinueClick() {
+            world.switchControlState(WorldControlState.PLAY);
+        }
+        /////
+
+        let CellDNA = {
+            PHOTOSYNTHESIS: 1 << 1,
+            DETRITOPHAGE: 1 << 2,
+            PHYTOPHAGE: 1 << 3,
+            CARNIVORES: 1 << 4,
+
+            MOVING: 1 << 5,
+            REGENERATION: 1 << 6,
+
+            REPRODUCTIONBINARYFISSION: 1 << 7, //for 1 cell
+            REPRODUCTIONMATING: 1 << 8, //for 2 cells
+            REPRODUCTIONBREEDING: 1 << 9, //for 1 cell
+        };
+
+        let CellDNAColor = {
+            PHOTOSYNTHESIS: [0, 153, 0], //green
+            DETRITOPHAGE: [153, 76, 0], //brown
+            PHYTOPHAGE: [204, 204, 0], //yellow
+            CARNIVORES: [255, 0, 0], //red
+
+            MOVING: [0, 0, 204],
+            REGENERATION: [255, 51, 255],
+
+            REPRODUCTIONBINARYFISSION: [102, 255, 102],
+            REPRODUCTIONMATING: [255, 102, 102],
+            REPRODUCTIONBREEDING: [102, 255, 102],
+        };
+
+        let WorldMapState = {
+            SHOWCELL: 0,
+            SHOWMAP: 1,
+        }
+
+        let WorldControlState = {
+            PLAY: 0,
+            PAUSE: 1,
+        }
+
+        let MapLayout = {
+            DEFAUTL: 0,
+            POLLUTION: 1,
+            ENERGY: 2
+        }
+
+
+        function rgb(r, g, b) {
+            return "#" + (1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1);
+        }
+
+        function hex2rgb(str) {
+            var hex = str.replace('#', '');
+            var aRgbHex = hex.match(/.{1,2}/g);
+            var aRgb = [
+                parseInt(aRgbHex[0], 16),
+                parseInt(aRgbHex[1], 16),
+                parseInt(aRgbHex[2], 16)
+            ];
+            return aRgb;
+        }
+
+        function getRandomBitObj(obj) {
+            let k = Object.keys(obj)
+            let index = Math.floor(Math.random() * k.length)
+            return obj[k[index]]
+        }
+
+        function getRandomInt(min, max) {
+            min = Math.ceil(min);
+            max = Math.floor(max);
+            return Math.floor(Math.random() * (max - min + 1)) + min;
+        }
+
+        function getRandomDirection() {
+            let a = [-1, 0, 1];
+            return [a[getRandomInt(0, 2)], a[getRandomInt(0, 2)]];
+        }
+
+
+        function updateCellCount(val) {
+            l_cellcount.innerText = val
+        }
+
+        function updateDuration(val) {
+            l_duration.innerText = val
+        }
+
+
+        class WorldCOnfig {
+            constructor() {
+                this.cLifeDuration = 30;
+                this.cDNAMutationChance = 1;
+            }
+        }
+
+
+        class World {
+            constructor(width, height, cellSize, population) {
+                this.col = Math.floor(width / cellSize);
+                this.row = Math.floor(height / cellSize);
+                this.cellSize = cellSize;
+                this.numCells = this.col * this.row;
+                this.wcells = [];
+                this.duration = 0;
+                this.mapstate = WorldMapState.SHOWCELL;
+                this.mapLayout = MapLayout.DEFAUTL;
+                this.state = WorldControlState.PLAY;
+                this.config = new WorldCOnfig();
+
+                // Create the cells of the World
+                for (let x = 0; x < this.col; x++) {
+                    for (let y = 0; y < this.row; y++) {
+                        let env = new WorldEnv();
+
+                        if ((x < 15 || x > this.col - 15) || (y < 15 || y > this.row - 15)) {
+                            env.humidity = 7;
+                            env.lighting = -3;
+                        }
+
+                        let wcell = new WorldCell(x * this.col + y, x, y, this.cellSize, env, null);
+                        this.wcells.push(wcell);
+                    }
+                }
+
+                for (let i = 0; i < population; i++) {
+                    let initCell = new Cell();
+                    initCell.root_parent = Math.random().toString(36).slice(2, 7);
+                    initCell.forceMutate();
+                    this.wcells[Math.floor(Math.random() * this.numCells)].cell = initCell
+                }
+            }
+
+            switchMapState(state, layout = MapLayout.DEFAUTL) {
+                this.mapstate = state;
+                this.mapLayout = layout;
+            }
+
+            switchControlState(state) {
+                this.state = state;
+            }
+
+            onClickAt(wx, wy, html_element) {
+
+                this.switchControlState(WorldControlState.PAUSE);
+
+                let x = Math.floor(wx / this.cellSize);
+                let y = Math.floor(wy / this.cellSize);
+                let index = x * this.col + y;
+
+                let wc = this.wcells[index];
+
+                // console.log(`x=${x},y=${y},i=${index}`);
+                var dna_str = []
+                if (wc.cell != null) {
+                    dna_str = wc.cell.log();
+                }
+                html_element.innerText = JSON.stringify(wc) + "\n" + JSON.stringify(dna_str);
+                // console.log(JSON.stringify(wc), JSON.stringify(dna_str));
+            }
+
+            // Render the World on the canvas
+            render(ctx) {
+                if (this.state != WorldControlState.PLAY) {
+                    return;
+                }
+                this.duration++;
+                var count = 0;
+                for (let i = 0; i < this.numCells; i++) {
+                    if (this.mapstate == WorldMapState.SHOWCELL) {
+                        this.wcells[i].render(ctx);
+                    } else if (this.mapstate == WorldMapState.SHOWMAP) {
+                        this.wcells[i].renderMap(ctx, this.mapLayout);
+                    }
+                    if (this.wcells[i].cell != null) {
+                        count++;
+                    }
+                }
+                if (count == 0) {
+                    this.switchControlState(WorldControlState.PAUSE);
+                }
+                updateCellCount(`${count}/${this.numCells}`);
+                updateDuration(this.duration);
+            }
+
+            moveTo(x, y, move_pattern) {
+                var nx = x + move_pattern[0];
+                var ny = y + move_pattern[1];
+                if (nx < 0) nx += this.col;
+                if (ny < 0) ny += this.row;
+                return [nx % this.col, ny % this.row];
+            }
+
+
+            findFreeCellAround(x, y) {
+                var l = [
+                    [x - 1, y + 1],
+                    [x, y + 1],
+                    [x + 1, y + 1],
+                    [x - 1, y],
+                    [x + 1, y],
+                    [x - 1, y - 1],
+                    [x, y - 1],
+                    [x + 1, y - 1]
+                ];
+
+                l = l.map(i => {
+                    var x = i[0];
+                    var y = i[1];
+                    if (x < 0) x += this.col;
+                    if (y < 0) y += this.row;
+                    return [x % this.col, y % this.row];
+                });
+
+                let indexes = l.map(i => i[0] * this.col + i[1]);
+
+                var freeIndexes = [];
+
+                for (var i of indexes) {
+                    if (this.wcells[i].cell == null) {
+                        freeIndexes.push(i);
+                    }
+                }
+
+                let len = freeIndexes.length;
+                if (len > 0) {
+                    let r = getRandomInt(0, len - 1);
+                    return freeIndexes[r];
+                }
+                return null;
+            }
+
+
+            update() {
+                if (this.state != WorldControlState.PLAY) {
+                    return;
+                }
+                let access = getRandomInt(0, 99999);
+                for (let x = 0; x < this.col; x++) {
+                    for (let y = 0; y < this.row; y++) {
+                        let index = x * this.col + y;
+                        let wc = this.wcells[index];
+                        if (wc.cell != null && wc.access != access) {
+                            wc.access = access;
+                            wc.cell.lifeDuration++;
+                            wc.cell.mutate(this.config.cDNAMutationChance);
+
+                            //Env impact
+                            if ((wc.cell.dna & CellDNA.REGENERATION) === CellDNA.REGENERATION) {
+                                wc.cell.energy += 1;
+                            }
+
+                            if ((wc.cell.dna & CellDNA.PHOTOSYNTHESIS) === CellDNA.PHOTOSYNTHESIS) {
+                                wc.cell.energy += wc.env.lighting;
+                            }
+
+                            if (wc.env.pollution > 0) {
+                                if ((wc.cell.dna & CellDNA.DETRITOPHAGE) === CellDNA.DETRITOPHAGE) {
+                                    var v = Math.max(1, Math.floor(wc.env.pollution * 0.3));
+                                    wc.cell.energy += v;
+                                    wc.env.pollution -= v;
+                                    wc.env.pollution = Math.max(0, wc.env.pollution);
+                                } else {
+                                    wc.cell.energy -= Math.max(1, Math.floor(wc.cell.energy * wc.env.pollution / 100));
+                                }
+                            }
+
+                            if (wc.env.humidity < 0 || wc.env.humidity > 3) {
+                                var v = Math.abs(wc.env.humidity);
+                                wc.cell.energy -= v;
+                            }
+
+                            if (wc.cell.energy <= 0 || wc.cell.lifeDuration >= this.config.cLifeDuration) {
+                                if ((wc.cell.dna & (CellDNA.PHYTOPHAGE | CellDNA.CARNIVORES)) > 0) {
+                                    wc.env.pollution += Math.max(1, wc.cell.energy);
+                                } else {
+                                    wc.env.pollution += Math.max(1, Math.floor(wc.cell.energy / 2));
+                                }
+                                wc.cell = null;
+                                continue;
+                            }
+
+                            //  reproduction
+                            if ((wc.cell.dna & CellDNA.MOVING) === CellDNA.MOVING) {
+                                wc.cell.energy -= 1;
+                                let nPos = this.moveTo(wc.x, wc.y, wc.cell.movePatern);
+                                let nIndex = nPos[0] * this.col + nPos[1];
+                                let n_wc = this.wcells[nIndex];
+
+                                if (n_wc.cell != null) {
+                                    if (wc.cell.canReproduct(n_wc.cell) || n_wc.cell.canReproduct(wc.cell)) {
+                                        let freenPos = this.findFreeCellAround(nPos[0], nPos[1]);
+                                        if (freenPos != null) {
+                                            wc.cell.energy -= 1;
+                                            n_wc.cell.energy -= 1;
+                                            n_wc.access = access;
+                                            let newCell = new Cell();
+                                            newCell.root_parent = wc.cell.root_parent;
+                                            newCell.movePatern = wc.cell.movePatern.slice();
+                                            newCell.dna = (wc.cell.dna | n_wc.cell.dna);
+                                            newCell.generation = wc.cell.generation + 1;
+                                            newCell.validateDNA(CellDNA.REPRODUCTIONMATING);
+                                            newCell.forceMutate();
+                                            this.wcells[freenPos].cell = newCell;
+                                            this.wcells[freenPos].access = access;
+                                        }
+                                    } else {
+                                        if (wc.cell.canDefeatTarget(n_wc.cell)) {
+                                            wc.cell.energy += n_wc.cell.energy;
+                                            n_wc.cell = wc.cell;
+                                            n_wc.access = access;
+                                            // n_wc.env.pollution += 5;
+                                            wc.cell = null;
+                                        } else if (n_wc.cell.canDefeatTarget(wc.cell)) {
+                                            n_wc.cell.energy += wc.cell.energy;
+                                            // n_wc.env.pollution += 5;
+                                            wc.cell = null;
+                                        }
+                                    }
+                                } else {
+                                    n_wc.access = access;
+                                    n_wc.cell = wc.cell;
+                                    wc.cell = null;
+                                }
+                            } else {
+                                if (wc.cell.canReproduct(null)) {
+                                    let freenPos = this.findFreeCellAround(wc.x, wc.y);
+                                    if (freenPos != null) {
+                                        let newCell = new Cell();
+                                        newCell.root_parent = wc.cell.root_parent;
+                                        newCell.energy = Math.floor(wc.cell.energy / 2);
+                                        newCell.generation = wc.cell.generation + 1;
+                                        wc.cell.energy = newCell.energy;
+                                        newCell.dna = wc.cell.dna;
+                                        if ((this.dna & CellDNA.REPRODUCTIONBINARYFISSION) === CellDNA.REPRODUCTIONBINARYFISSION) {
+                                            newCell.forceMutate();
+                                        }
+                                        this.wcells[freenPos].cell = newCell;
+                                        this.wcells[freenPos].access = access;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+
+        class WorldCell {
+            constructor(index, x, y, size, env, cell) {
+                this.index = index;
+                this.x = x;
+                this.y = y;
+                this.size = size;
+
+                this.env = env;
+                this.cell = cell;
+                this.access = 0;
+            }
+
+            render(ctx) {
+                if (this.cell != null) {
+                    ctx.fillStyle = this.cell.color;
+                } else {
+                    ctx.fillStyle = this.env.color();
+                }
+                ctx.fillRect(this.x * this.size, this.y * this.size, this.size, this.size);
+            }
+
+            renderMap(ctx, layout = MapLayout.DEFAUTL) {
+                if (layout == MapLayout.DEFAUTL || layout == MapLayout.POLLUTION) {
+                    ctx.fillStyle = this.env.color_map(layout);
+                } else if (layout == MapLayout.ENERGY) {
+                    ctx.fillStyle = "black";
+                    if (this.cell != null) {
+                        let k = Math.min(255, this.cell.energy % 255);
+                        ctx.fillStyle = rgb(255, (k * 2) % 255, k);
+                    }
+                }
+                ctx.fillRect(this.x * this.size, this.y * this.size, this.size, this.size);
+            }
+        }
+
+        class WorldEnv {
+            constructor(lighting = 1, humidity = 1, pollution = 0) {
+                this.lighting = lighting;
+                this.humidity = humidity;
+                this.pollution = pollution;
+                // this.color = "gray";
+            }
+
+            color() {
+                var c = "gray";
+                if (this.humidity >= 5) {
+                    c = rgb(0, 0, 255); //blue
+                } else if (this.humidity <= -5) {
+                    c = rgb(255, 255, 51); //sand
+                }
+                return c;
+            }
+
+            color_map(mapLayout) {
+
+                var c = "gray";
+
+                if (this.humidity >= 5) {
+                    c = rgb(0, 0, 255); //blue
+                } else if (this.humidity <= -5) {
+                    c = rgb(255, 255, 51); //sand
+                }
+
+                if (mapLayout == MapLayout.DEFAUTL) {
+
+                } else if (mapLayout == MapLayout.POLLUTION) {
+                    // c = rgb(255, 204, 255); //pink
+                    c = rgb(255, 255, 255); //pink
+                    if (this.pollution > 0) {
+                        let k = (254 - Math.min(254, this.pollution)) % 255;
+                        c = rgb(0, k, 255); //brown
+                    }
+                } else if (mapLayout == MapLayout.ENERGY) {
+
+                }
+                return c;
+            }
+        }
+
+        class Cell {
+            constructor() {
+                this.color = "#fff";
+                this.movePatern = [0, 0];
+                this.energy = 10;
+                this.dna = CellDNA.PHOTOSYNTHESIS;
+                this.lifeDuration = 0;
+                this.updateColor();
+                this.root_parent = "";
+                this.generation = 0;
+            }
+
+            forceMutate() {
+                let randomDNA = getRandomBitObj(CellDNA)
+                if (Math.floor(Math.random() * 100) <= 50) {
+                    this.dna &= ~randomDNA;
+                } else {
+                    if (randomDNA === CellDNA.MOVING) {
+                        this.movePatern = getRandomDirection();
+                        // this.dna ^= CellDNA.PHOTOSYNTHESIS;
+                    }
+                    this.dna |= randomDNA;
+                    this.validateDNA(randomDNA);
+                }
+                this.updateColor();
+            }
+
+            mutate(chance) {
+                if (Math.floor(Math.random() * 100) <= chance) {
+                    this.forceMutate()
+                }
+            }
+
+            validateDNA(flag) { //flag from parrent cell
+                // Only 1 type of REPRODUCTION is available
+                if (flag === CellDNA.REPRODUCTIONBINARYFISSION) {
+                    this.dna &= ~(CellDNA.REPRODUCTIONMATING | CellDNA.REPRODUCTIONBREEDING);
+                } else if (flag === CellDNA.REPRODUCTIONMATING) {
+                    this.dna &= ~(CellDNA.REPRODUCTIONBINARYFISSION | CellDNA.REPRODUCTIONBREEDING);
+                } else if (flag === CellDNA.REPRODUCTIONBREEDING) {
+                    this.dna &= ~(CellDNA.REPRODUCTIONMATING | CellDNA.REPRODUCTIONBINARYFISSION);
+                }
+
+                if (flag === CellDNA.DETRITOPHAGE) {
+                    this.dna &= ~(CellDNA.CARNIVORES);
+                } else if (flag === CellDNA.CARNIVORES) {
+                    this.dna &= ~(CellDNA.DETRITOPHAGE);
+                }
+            }
+
+            updateColor() {
+                var c = null;
+                if ((this.dna & CellDNA.CARNIVORES) === CellDNA.CARNIVORES) {
+                    c = CellDNAColor.CARNIVORES;
+                } else if ((this.dna & CellDNA.PHYTOPHAGE) === CellDNA.PHYTOPHAGE) {
+                    c = CellDNAColor.PHYTOPHAGE;
+                } else if ((this.dna & CellDNA.PHOTOSYNTHESIS) === CellDNA.PHOTOSYNTHESIS) {
+                    c = CellDNAColor.PHOTOSYNTHESIS
+                } else if ((this.dna & CellDNA.DETRITOPHAGE) === CellDNA.DETRITOPHAGE) {
+                    c = CellDNAColor.DETRITOPHAGE
+                }
+                if (c != null) {
+                    this.color = rgb(c[0], c[1], c[2]);
+                    return;
+                }
+
+
+                let keys = Object.keys(CellDNA);
+                for (let k of keys) {
+                    if ((this.dna & CellDNA[k]) === CellDNA[k]) {
+                        var clr = CellDNAColor[k];
+                        if (c == null) {
+                            c = clr;
+                        } else {
+                            c = c.map((i, index) => {
+                                return Math.floor((i + clr[index]) / 2);
+                            });
+                        }
+                    }
+                }
+                if (c == null) {
+                    this.color = "#000";
+
+                } else {
+                    this.color = rgb(c[0], c[1], c[2]);
+                }
+            }
+
+            canReproduct(cell) {
+                if (cell != null) {
+                    if ((this.dna & CellDNA.REPRODUCTIONMATING) === CellDNA.REPRODUCTIONMATING) {
+                        if (this.matchingBits(cell.dna) >= 0.9) {
+                            // return (this.root_parent == cell.root_parent);
+                            return Math.abs(this.generation - cell.generation) <= 10
+                        }
+                        // let similarity = (this.dna & cell.dna) / (this.dna | cell.dna);
+                        // return similarity > 0.9;
+                    }
+                } else {
+                    if (this.energy < 10) {
+                        return false;
+                    }
+                    let repFlag = CellDNA.REPRODUCTIONBINARYFISSION | CellDNA.REPRODUCTIONBREEDING;
+                    return ((this.dna & repFlag) > 0)
+                }
+                return false;
+            }
+
+            canDefeatTarget(cell) {
+                if ((this.dna & CellDNA.CARNIVORES) === CellDNA.CARNIVORES && (cell.dna & CellDNA.PHYTOPHAGE) === CellDNA.PHYTOPHAGE) {
+                    return true;
+                } else if ((this.dna & CellDNA.PHYTOPHAGE) === CellDNA.PHYTOPHAGE && (cell.dna & CellDNA.PHOTOSYNTHESIS) === CellDNA.PHOTOSYNTHESIS) {
+                    return true;
+                } else if ((this.dna & CellDNA.CARNIVORES) === (cell.dna & CellDNA.CARNIVORES)) {
+                    return this.energy > cell.energy;
+                }
+                return false;
+            }
+
+            matchingBits(b) {
+                //    console.log(Number(a).toString(2));
+                //    console.log(Number(b).toString(2));
+                var count = 0;
+                var total = 0;
+                var a = this.dna;
+                while ((a != 0) || (b != 0)) {
+                    total++;
+                    if (((a != 0) && (b != 0)) && (a & 1) === (b & 1)) {
+                        count++;
+                    }
+                    a >>= 1;
+                    b >>= 1;
+
+                }
+                // console.log(`${count}/${total}`)
+                return Math.round((count / total + 0.00001) * 100) / 100;
+            }
+
+
+            log() {
+                var dna_str = []
+                let keys = Object.keys(CellDNA);
+                for (let k of keys) {
+                    if ((this.dna & CellDNA[k]) === CellDNA[k]) {
+                        dna_str.push(k);
+                    }
+                }
+                return dna_str;
+            }
+        }
+
+        let world = new World(700, 700, 5, 10);
+
+        function getMousePosition(canvas, event) {
+            let rect = canvas.getBoundingClientRect();
+            let x = event.clientX - rect.left;
+            let y = event.clientY - rect.top;
+
+            world.onClickAt(x, y, l_worldcell_info);
+        }
+
+        canvas.addEventListener("mousedown", function(e) {
+            getMousePosition(canvas, e);
+        });
+
+        function animate() {
+            world.update();
+            world.render(ctx);
+            requestAnimationFrame(animate);
+        }
+
+        animate();
+    </script>
+</body>
+
+</html>
