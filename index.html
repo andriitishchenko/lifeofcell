@@ -7,14 +7,16 @@
 
 <body>
     <div>
-        Duration:<span id="duration"></span> cells: <span id="cellcount"></span>
+        <input type="button" value="Continue" onclick="onConlinueClick()"> Duration:
+        <span id="duration"></span> cells: <span id="cellcount"></span>
     </div>
     <canvas id="canvas" width="700" height="700"></canvas>
     <div>
-        <input type="button" value="Continue" onclick="onConlinueClick()">
+
         <input type="button" value="Cells" onclick="showCells()">
         <input type="button" value="Cells Energy" onclick="showMap(MapLayout.ENERGY)">
         <input type="button" value="Map Pollution" onclick="showMap(MapLayout.POLLUTION)">
+        <input type="button" value="Map Terrain" onclick="showMap(MapLayout.TERRAIN)">
     </div>
     <div id="worldcell_info"></div>
 
@@ -25,6 +27,71 @@
 
         let canvas = document.getElementById("canvas");
         let ctx = canvas.getContext("2d");
+
+        // =======
+
+        class Noise {
+            constructor() {
+                this.permutation = [];
+                for (var i = 0; i < 128; i++) {
+                    this.permutation[i] = new Array();
+                    for (var j = 0; j < 128; j++) {
+                        this.permutation[i][j] = 2 * Math.random() * Math.PI;
+                    }
+                }
+            }
+
+            dot(A, B) {
+                var acc = 0;
+                for (var i = 0; i < A.length; i++) {
+                    acc += A[i] * B[i];
+                }
+                return acc;
+            }
+
+            fade(t) {
+                return t * t * t * (t * (t * 6 - 15) + 10);
+                // return -2 * t * t * t + 3 * t * t;
+            }
+
+            lerp(t, a, b) {
+                return a + t * (b - a);
+            }
+
+            grad(theta, x, y) {
+                let cord = [Math.cos(theta), Math.sin(theta)];
+                return this.dot(cord, [x, y]);
+            }
+
+            scale(n) {
+                return (1 + n) / 2;
+            }
+
+            generate(x, y, width, height, size) {
+                x = size * (x / width);
+                y = size * (y / height);
+                // var p = permutation;
+                var X = Math.floor(x) % 127; // FIND UNIT CUBE THAT
+                var Y = Math.floor(y) % 127; // CONTAINS POINT.
+                x -= Math.floor(x); // FIND RELATIVE X,Y,Z
+                y -= Math.floor(y); // OF POINT IN CUBE.
+                var u = this.fade(x); // COMPUTE FADE CURVES
+                var v = this.fade(y);
+
+
+                return this.scale(this.lerp(v, this.lerp(u, this.grad(this.permutation[X][Y], x, y), // AND ADD
+                        this.grad(this.permutation[X + 1][Y], x - 1, y)), // BLENDED
+                    this.lerp(u, this.grad(this.permutation[X][Y + 1], x, y - 1), // RESULTS
+                        this.grad(this.permutation[X + 1][Y + 1], x - 1, y - 1))));
+            }
+
+        }
+
+
+
+        let noise = new Noise();
+        let noiseSize = 3;
+        // ========
 
 
 
@@ -82,7 +149,8 @@
         let MapLayout = {
             DEFAUTL: 0,
             POLLUTION: 1,
-            ENERGY: 2
+            ENERGY: 2,
+            TERRAIN: 3
         }
 
 
@@ -153,11 +221,22 @@
                 for (let x = 0; x < this.col; x++) {
                     for (let y = 0; y < this.row; y++) {
                         let env = new WorldEnv();
+                        let nn = noise.generate(x, y, this.col, this.row, noiseSize);
+                        // var p = Math.round(255 * nn);
 
-                        if ((x < 15 || x > this.col - 15) || (y < 15 || y > this.row - 15)) {
-                            env.humidity = 7;
-                            env.lighting = -3;
-                        }
+                        var humidity = Math.round(10 * nn);
+
+                        // if (p < 100) { //water
+                        env.humidity = humidity;
+                        env.lighting = 10 / 2 - humidity; //  humidity >= 7 ? 4 - humidity :  ;
+                        // }
+
+                        // p = p < 100 ? p : 255;
+
+                        // if ((x < 15 || x > this.col - 15) || (y < 15 || y > this.row - 15)) {
+                        //     env.humidity = 7;
+                        //     env.lighting = -3;
+                        // }
 
                         let wcell = new WorldCell(x * this.col + y, x, y, this.cellSize, env, null);
                         this.wcells.push(wcell);
@@ -211,7 +290,12 @@
                     if (this.mapstate == WorldMapState.SHOWCELL) {
                         this.wcells[i].render(ctx);
                     } else if (this.mapstate == WorldMapState.SHOWMAP) {
-                        this.wcells[i].renderMap(ctx, this.mapLayout);
+                        if (this.mapLayout == MapLayout.TERRAIN) {
+                            this.wcells[i].renderMapTerrain(ctx, this.mapLayout, this.col, this.row);
+                        } else {
+                            this.wcells[i].renderMap(ctx, this.mapLayout);
+                        }
+
                     }
                     if (this.wcells[i].cell != null) {
                         count++;
@@ -283,7 +367,7 @@
                         let wc = this.wcells[index];
                         if (wc.cell != null && wc.access != access) {
                             wc.access = access;
-                            wc.cell.lifeDuration++;
+                            wc.cell.age++;
                             wc.cell.mutate(this.config.cDNAMutationChance);
 
                             //Env impact
@@ -311,7 +395,7 @@
                                 wc.cell.energy -= v;
                             }
 
-                            if (wc.cell.energy <= 0 || wc.cell.lifeDuration >= this.config.cLifeDuration) {
+                            if (wc.cell.energy <= 0 || wc.cell.age >= this.config.cLifeDuration) {
                                 if ((wc.cell.dna & (CellDNA.PHYTOPHAGE | CellDNA.CARNIVORES)) > 0) {
                                     wc.env.pollution += Math.max(1, wc.cell.energy);
                                 } else {
@@ -421,6 +505,20 @@
                 }
                 ctx.fillRect(this.x * this.size, this.y * this.size, this.size, this.size);
             }
+
+            renderMapTerrain(ctx, layout = MapLayout.DEFAUTL, col, row) {
+                if (layout == MapLayout.TERRAIN) {
+                    let nn = noise.generate(this.x, this.y, col, row, noiseSize);
+                    // let nn = Noise.generate(i, j, col, row, size);
+                    let p = Math.round(255 * nn);
+                    // p = p < 100 ? p : 255;
+                    let c = rgb(p, p, p);
+                    ctx.fillStyle = c;
+                    ctx.fillRect(this.x * this.size, this.y * this.size, this.size, this.size);
+                } else {
+                    this.renderMap(ctx, layout);
+                }
+            }
         }
 
         class WorldEnv {
@@ -463,6 +561,7 @@
                 } else if (mapLayout == MapLayout.ENERGY) {
 
                 }
+
                 return c;
             }
         }
@@ -473,7 +572,7 @@
                 this.movePatern = [0, 0];
                 this.energy = 10;
                 this.dna = CellDNA.PHOTOSYNTHESIS;
-                this.lifeDuration = 0;
+                this.age = 0;
                 this.updateColor();
                 this.root_parent = "";
                 this.generation = 0;

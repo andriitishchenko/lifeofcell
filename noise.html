@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Life of Cells</title>
+</head>
+
+<body>
+    <script>
+        function rgb(r, g, b) {
+            return "#" + (1 <<
+                24 | r << 16 | g << 8 | b).toString(16).slice(1);
+        }
+
+
+        class Noise {
+            constructor() {
+                this.permutation = [];
+                for (var i = 0; i < 128; i++) {
+                    this.permutation[i] = new Array();
+                    for (var j = 0; j < 128; j++) {
+                        this.permutation[i][j] = 2 * Math.random() * Math.PI;
+                    }
+                }
+            }
+
+            dot(A, B) {
+                var acc = 0;
+                for (var i = 0; i < A.length; i++) {
+                    acc += A[i] * B[i];
+                }
+                return acc;
+            }
+
+            fade(t) {
+                return t * t * t * (t * (t * 6 - 15) + 10);
+                // return -2 * t * t * t + 3 * t * t;
+            }
+
+            lerp(t, a, b) {
+                return a + t * (b - a);
+            }
+
+            grad(theta, x, y) {
+                let cord = [Math.cos(theta), Math.sin(theta)];
+                return this.dot(cord, [x, y]);
+            }
+
+            scale(n) {
+                return (1 + n) / 2;
+            }
+
+            generate(x, y, width, height, size) {
+                x = size * (x / width);
+                y = size * (y / height);
+                // var p = permutation;
+                var X = Math.floor(x) % 127; // FIND UNIT CUBE THAT
+                var Y = Math.floor(y) % 127; // CONTAINS POINT.
+                x -= Math.floor(x); // FIND RELATIVE X,Y,Z
+                y -= Math.floor(y); // OF POINT IN CUBE.
+                var u = this.fade(x); // COMPUTE FADE CURVES
+                var v = this.fade(y);
+
+
+                return this.scale(this.lerp(v, this.lerp(u, this.grad(this.permutation[X][Y], x, y), // AND ADD
+                        this.grad(this.permutation[X + 1][Y], x - 1, y)), // BLENDED
+                    this.lerp(u, this.grad(this.permutation[X][Y + 1], x, y - 1), // RESULTS
+                        this.grad(this.permutation[X + 1][Y + 1], x - 1, y - 1))));
+            }
+
+        }
+
+
+        function perlinNoise(ca) {
+            let ctx = ca.getContext("2d");
+            // let gridSize = 1 << 5;
+            let gridSize = 1 << 3;
+            let w = ca.width;
+            let h = ca.height;
+            let col = Math.floor(w / gridSize);
+            let row = Math.floor(h / gridSize);
+
+            let perm = new Array(col * row).fill(0)
+            var i = 0;
+            while (i < 255) {
+                perm[i++] = Math.random() * 256 | 0;
+            }
+
+            let noise = new Noise();
+            let size = 3;
+
+            for (var i = 0; i < col; i++) {
+                for (var j = 0; j < row; j++) {
+                    // let nn = noise(size * (i / col), size * (j / row));
+                    let nn = noise.generate(i, j, col, row, size);
+                    // console.log(nn * 10);
+                    // let nn = Noise.generate(i, j, col, row, size);
+                    var p = Math.round(255 * nn);
+                    p = p < 100 ? p : 255;
+                    let c = rgb(p, p, p);
+                    ctx.fillStyle = c;
+                    ctx.fillRect(i * gridSize, j * gridSize, gridSize, gridSize);
+                }
+            }
+        }
+
+
+        const canvas = document.createElement('canvas');
+        canvas.height = 500;
+        canvas.width = 500;
+        document.body.appendChild(canvas);
+
+        perlinNoise(canvas);
+    </script>
+</body>
+
+</html>
