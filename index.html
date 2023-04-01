@@ -1,18 +1,34 @@
-<!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
+    <meta charset="utf-8">
     <title>Life of Cells</title>
 </head>
+<style>
+    .legend span {
+        line-height: 0;
+        margin-left: 5px;
+    }
+    
+    .legend span::before {
+        content: "⏺";
+    }
+</style>
 
 <body>
     <div>
+        <input type="button" value="Regenerate cells" onclick="onRegenerateClick()">
         <input type="button" value="Continue" onclick="onConlinueClick()"> Duration:
         <span id="duration"></span> cells: <span id="cellcount"></span>
     </div>
     <canvas id="canvas" width="700" height="700"></canvas>
     <div>
-
+        <div class="legend">
+            <span style="color: chartreuse;"></span>Photosynthesis
+            <span style="color: rgb(246, 255, 0);"></span>Phytophage
+            <span style="color: rgb(255, 0, 0);"></span>Carnivores
+            <span style="color: rgb(131, 59, 0);"></span>Detritophage
+        </div>
         <input type="button" value="Cells" onclick="showCells()">
         <input type="button" value="Cells Energy" onclick="showMap(MapLayout.ENERGY)">
         <input type="button" value="Map Pollution" onclick="showMap(MapLayout.POLLUTION)">
@@ -78,7 +94,6 @@
                 var u = this.fade(x); // COMPUTE FADE CURVES
                 var v = this.fade(y);
 
-
                 return this.scale(this.lerp(v, this.lerp(u, this.grad(this.permutation[X][Y], x, y), // AND ADD
                         this.grad(this.permutation[X + 1][Y], x - 1, y)), // BLENDED
                     this.lerp(u, this.grad(this.permutation[X][Y + 1], x, y - 1), // RESULTS
@@ -105,6 +120,10 @@
 
         function onConlinueClick() {
             world.switchControlState(WorldControlState.PLAY);
+        }
+
+        function onRegenerateClick() {
+            world.regeneratePopulation();
         }
         /////
 
@@ -186,7 +205,6 @@
             return [a[getRandomInt(0, 2)], a[getRandomInt(0, 2)]];
         }
 
-
         function updateCellCount(val) {
             l_cellcount.innerText = val
         }
@@ -195,14 +213,12 @@
             l_duration.innerText = val
         }
 
-
         class WorldCOnfig {
             constructor() {
                 this.cLifeDuration = 30;
                 this.cDNAMutationChance = 1;
             }
         }
-
 
         class World {
             constructor(width, height, cellSize, population) {
@@ -222,33 +238,29 @@
                     for (let y = 0; y < this.row; y++) {
                         let env = new WorldEnv();
                         let nn = noise.generate(x, y, this.col, this.row, noiseSize);
-                        // var p = Math.round(255 * nn);
-
                         var humidity = Math.round(10 * nn);
-
-                        // if (p < 100) { //water
                         env.humidity = humidity;
-                        env.lighting = 10 / 2 - humidity; //  humidity >= 7 ? 4 - humidity :  ;
-                        // }
-
-                        // p = p < 100 ? p : 255;
-
-                        // if ((x < 15 || x > this.col - 15) || (y < 15 || y > this.row - 15)) {
-                        //     env.humidity = 7;
-                        //     env.lighting = -3;
-                        // }
-
+                        env.lighting = 10 / 2 - humidity;
                         let wcell = new WorldCell(x * this.col + y, x, y, this.cellSize, env, null);
                         this.wcells.push(wcell);
                     }
+                }
+                this.regeneratePopulation(population);
+            }
+
+            regeneratePopulation(population = 10) {
+                this.duration = 0;
+                for (let i = 0; i < this.numCells; i++) {
+                    this.wcells[i].cell = null;
                 }
 
                 for (let i = 0; i < population; i++) {
                     let initCell = new Cell();
                     initCell.root_parent = Math.random().toString(36).slice(2, 7);
                     initCell.forceMutate();
-                    this.wcells[Math.floor(Math.random() * this.numCells)].cell = initCell
+                    this.wcells[Math.floor(Math.random() * this.numCells)].cell = initCell;
                 }
+                this.state = WorldControlState.PLAY;
             }
 
             switchMapState(state, layout = MapLayout.DEFAUTL) {
@@ -261,16 +273,11 @@
             }
 
             onClickAt(wx, wy, html_element) {
-
                 this.switchControlState(WorldControlState.PAUSE);
-
                 let x = Math.floor(wx / this.cellSize);
                 let y = Math.floor(wy / this.cellSize);
                 let index = x * this.col + y;
-
                 let wc = this.wcells[index];
-
-                // console.log(`x=${x},y=${y},i=${index}`);
                 var dna_str = []
                 if (wc.cell != null) {
                     dna_str = wc.cell.log();
@@ -286,21 +293,51 @@
                 }
                 this.duration++;
                 var count = 0;
+                var fillColor = "";
                 for (let i = 0; i < this.numCells; i++) {
+
+                    let wc = this.wcells[i];
+                    let nn = noise.generate(wc.x, wc.y, this.col, this.row, noiseSize);
+
+                    let p = Math.round(255 * nn);
+                    fillColor = rgb(p, p, p); //base gray
+
+                    if (wc.env.humidity >= 5) { //water
+                        fillColor = rgb(0, nn * 50 | 0, 255 - p);
+                    } else
+                    if (wc.env.humidity <= -5) {
+                        fillColor = rgb(255, 255, 51); //sand
+                    }
+
                     if (this.mapstate == WorldMapState.SHOWCELL) {
-                        this.wcells[i].render(ctx);
+                        if (wc.cell != null) {
+                            fillColor = wc.cell.color; //green, yellow, red, brown
+                        }
                     } else if (this.mapstate == WorldMapState.SHOWMAP) {
                         if (this.mapLayout == MapLayout.TERRAIN) {
-                            this.wcells[i].renderMapTerrain(ctx, this.mapLayout, this.col, this.row);
-                        } else {
-                            this.wcells[i].renderMap(ctx, this.mapLayout);
+                            fillColor = rgb(p, p, p);
+                        } else if (this.mapLayout == MapLayout.POLLUTION) {
+                            fillColor = rgb(255, 255, 255); //pink
+                            if (wc.env.pollution > 0) {
+                                let k = (254 - Math.min(254, wc.env.pollution)) % 255;
+                                fillColor = rgb(0, k, 255); //brown
+                            }
+                        } else if (this.mapLayout == MapLayout.ENERGY) {
+                            fillColor = "black";
+                            if (wc.cell != null) {
+                                let k = Math.min(255, wc.cell.energy % 255);
+                                fillColor = rgb(255, (k * 2) % 255, k);
+                            }
                         }
-
                     }
-                    if (this.wcells[i].cell != null) {
+
+                    if (wc.cell != null) {
                         count++;
                     }
+                    ctx.fillStyle = fillColor;
+                    ctx.fillRect(wc.x * this.cellSize, wc.y * this.cellSize, this.cellSize, this.cellSize);
                 }
+
                 if (count == 0) {
                     this.switchControlState(WorldControlState.PAUSE);
                 }
@@ -483,42 +520,6 @@
                 this.cell = cell;
                 this.access = 0;
             }
-
-            render(ctx) {
-                if (this.cell != null) {
-                    ctx.fillStyle = this.cell.color;
-                } else {
-                    ctx.fillStyle = this.env.color();
-                }
-                ctx.fillRect(this.x * this.size, this.y * this.size, this.size, this.size);
-            }
-
-            renderMap(ctx, layout = MapLayout.DEFAUTL) {
-                if (layout == MapLayout.DEFAUTL || layout == MapLayout.POLLUTION) {
-                    ctx.fillStyle = this.env.color_map(layout);
-                } else if (layout == MapLayout.ENERGY) {
-                    ctx.fillStyle = "black";
-                    if (this.cell != null) {
-                        let k = Math.min(255, this.cell.energy % 255);
-                        ctx.fillStyle = rgb(255, (k * 2) % 255, k);
-                    }
-                }
-                ctx.fillRect(this.x * this.size, this.y * this.size, this.size, this.size);
-            }
-
-            renderMapTerrain(ctx, layout = MapLayout.DEFAUTL, col, row) {
-                if (layout == MapLayout.TERRAIN) {
-                    let nn = noise.generate(this.x, this.y, col, row, noiseSize);
-                    // let nn = Noise.generate(i, j, col, row, size);
-                    let p = Math.round(255 * nn);
-                    // p = p < 100 ? p : 255;
-                    let c = rgb(p, p, p);
-                    ctx.fillStyle = c;
-                    ctx.fillRect(this.x * this.size, this.y * this.size, this.size, this.size);
-                } else {
-                    this.renderMap(ctx, layout);
-                }
-            }
         }
 
         class WorldEnv {
@@ -526,43 +527,6 @@
                 this.lighting = lighting;
                 this.humidity = humidity;
                 this.pollution = pollution;
-                // this.color = "gray";
-            }
-
-            color() {
-                var c = "gray";
-                if (this.humidity >= 5) {
-                    c = rgb(0, 0, 255); //blue
-                } else if (this.humidity <= -5) {
-                    c = rgb(255, 255, 51); //sand
-                }
-                return c;
-            }
-
-            color_map(mapLayout) {
-
-                var c = "gray";
-
-                if (this.humidity >= 5) {
-                    c = rgb(0, 0, 255); //blue
-                } else if (this.humidity <= -5) {
-                    c = rgb(255, 255, 51); //sand
-                }
-
-                if (mapLayout == MapLayout.DEFAUTL) {
-
-                } else if (mapLayout == MapLayout.POLLUTION) {
-                    // c = rgb(255, 204, 255); //pink
-                    c = rgb(255, 255, 255); //pink
-                    if (this.pollution > 0) {
-                        let k = (254 - Math.min(254, this.pollution)) % 255;
-                        c = rgb(0, k, 255); //brown
-                    }
-                } else if (mapLayout == MapLayout.ENERGY) {
-
-                }
-
-                return c;
             }
         }
 
@@ -686,8 +650,6 @@
             }
 
             matchingBits(b) {
-                //    console.log(Number(a).toString(2));
-                //    console.log(Number(b).toString(2));
                 var count = 0;
                 var total = 0;
                 var a = this.dna;
@@ -700,7 +662,6 @@
                     b >>= 1;
 
                 }
-                // console.log(`${count}/${total}`)
                 return Math.round((count / total + 0.00001) * 100) / 100;
             }
 
