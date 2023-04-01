@@ -238,9 +238,12 @@
                     for (let y = 0; y < this.row; y++) {
                         let env = new WorldEnv();
                         let nn = noise.generate(x, y, this.col, this.row, noiseSize);
-                        var humidity = Math.round(10 * nn);
+                        let humidity = Math.round(10 * nn);
                         env.humidity = humidity;
-                        env.lighting = 10 / 2 - humidity;
+
+                        let lighting = Math.round(-20 * nn) + 10;
+                        env.lighting = lighting;
+
                         let wcell = new WorldCell(x * this.col + y, x, y, this.cellSize, env, null);
                         this.wcells.push(wcell);
                     }
@@ -412,8 +415,12 @@
                                 wc.cell.energy += 1;
                             }
 
-                            if ((wc.cell.dna & CellDNA.PHOTOSYNTHESIS) === CellDNA.PHOTOSYNTHESIS) {
-                                wc.cell.energy += wc.env.lighting;
+                            if (wc.env.lighting >= 5) { //sun radiation 
+                                wc.cell.energy -= wc.cell.energy * 0.1 | 0;
+                            } else {
+                                if ((wc.cell.dna & CellDNA.PHOTOSYNTHESIS) === CellDNA.PHOTOSYNTHESIS) {
+                                    wc.cell.energy += wc.env.lighting;
+                                }
                             }
 
                             if (wc.env.pollution > 0) {
