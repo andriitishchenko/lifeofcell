@@ -24,13 +24,16 @@
     <canvas id="canvas" width="700" height="700"></canvas>
     <div>
         <div class="legend">
+            <span style="color: #0000ff;"></span>Water
+            <span style="color: hsl(0, 0%, 42%);"></span>Ground
             <span style="color: chartreuse;"></span>Photosynthesis
             <span style="color: rgb(246, 255, 0);"></span>Phytophage
             <span style="color: rgb(255, 0, 0);"></span>Carnivores
             <span style="color: rgb(131, 59, 0);"></span>Detritophage
         </div>
-        <input type="button" value="Cells" onclick="showCells()">
-        <input type="button" value="Cells Energy" onclick="showMap(MapLayout.ENERGY)">
+        <input type="button" value="Cells" onclick="showCells(MapLayout.DEFAUTL)">
+        <input type="button" value="Cells clans" onclick="showCells(MapLayout.CLANS)">
+        <input type="button" value="Cells Energy" onclick="showCells(MapLayout.ENERGY)">
         <input type="button" value="Map Pollution" onclick="showMap(MapLayout.POLLUTION)">
         <input type="button" value="Map Terrain" onclick="showMap(MapLayout.TERRAIN)">
     </div>
@@ -110,8 +113,8 @@
 
 
 
-        function showCells() {
-            world.switchMapState(WorldMapState.SHOWCELL);
+        function showCells(layout) {
+            world.switchMapState(WorldMapState.SHOWCELL, layout);
         }
 
         function showMap(layout) {
@@ -123,7 +126,7 @@
         }
 
         function onRegenerateClick() {
-            world.regeneratePopulation();
+            world.regeneratePopulation(200);
         }
         /////
 
@@ -139,8 +142,11 @@
             REPRODUCTIONBINARYFISSION: 1 << 7, //for 1 cell
             REPRODUCTIONMATING: 1 << 8, //for 2 cells
             REPRODUCTIONBREEDING: 1 << 9, //for 1 cell
+
+            AQUATIC: 1 << 10,
         };
 
+        // https://www.w3schools.com/css/css_colors_rgb.asp
         let CellDNAColor = {
             PHOTOSYNTHESIS: [0, 153, 0], //green
             DETRITOPHAGE: [153, 76, 0], //brown
@@ -153,6 +159,8 @@
             REPRODUCTIONBINARYFISSION: [102, 255, 102],
             REPRODUCTIONMATING: [255, 102, 102],
             REPRODUCTIONBREEDING: [102, 255, 102],
+
+            AQUATIC: [106, 90, 205] //violet
         };
 
         let WorldMapState = {
@@ -169,7 +177,17 @@
             DEFAUTL: 0,
             POLLUTION: 1,
             ENERGY: 2,
-            TERRAIN: 3
+            TERRAIN: 3,
+            CLANS: 4,
+        }
+
+        function strToUtf16Bytes(str) {
+            const bytes = [];
+            for (ii = 0; ii < str.length; ii++) {
+                const code = str.charCodeAt(ii); // x00-xFFFF
+                bytes.push(code & 255, code >> 8); // low, high
+            }
+            return bytes;
         }
 
 
@@ -251,7 +269,7 @@
                 this.regeneratePopulation(population);
             }
 
-            regeneratePopulation(population = 10) {
+            regeneratePopulation(population = 50) {
                 this.duration = 0;
                 for (let i = 0; i < this.numCells; i++) {
                     this.wcells[i].cell = null;
@@ -313,8 +331,24 @@
                     }
 
                     if (this.mapstate == WorldMapState.SHOWCELL) {
+                        if (this.mapLayout == MapLayout.ENERGY) {
+                            fillColor = "black";
+                        }
                         if (wc.cell != null) {
                             fillColor = wc.cell.color; //green, yellow, red, brown
+                            if (this.mapLayout == MapLayout.ENERGY) {
+                                let k = Math.min(255, wc.cell.energy % 255);
+                                fillColor = rgb(255, (k * 2) % 255, k);
+                            } else if (this.mapLayout == MapLayout.CLANS) {
+                                // 
+                                var rB = strToUtf16Bytes(wc.cell.root_parent);
+                                let c = rB.reduce(function(a, b, i, list) {
+                                    if (i % 4 == 0) a.push(list[i] + list[i + 2]);
+                                    return a;
+                                }, []);
+
+                                fillColor = rgb(c[0], c[1], c[2]);
+                            }
                         }
                     } else if (this.mapstate == WorldMapState.SHOWMAP) {
                         if (this.mapLayout == MapLayout.TERRAIN) {
@@ -325,13 +359,8 @@
                                 let k = (254 - Math.min(254, wc.env.pollution)) % 255;
                                 fillColor = rgb(0, k, 255); //brown
                             }
-                        } else if (this.mapLayout == MapLayout.ENERGY) {
-                            fillColor = "black";
-                            if (wc.cell != null) {
-                                let k = Math.min(255, wc.cell.energy % 255);
-                                fillColor = rgb(255, (k * 2) % 255, k);
-                            }
                         }
+
                     }
 
                     if (wc.cell != null) {
@@ -434,12 +463,21 @@
                                 }
                             }
 
-                            if (wc.env.humidity < 0 || wc.env.humidity > 3) {
+                            if ((wc.cell.dna & CellDNA.AQUATIC) === CellDNA.AQUATIC) {
+                                if (wc.env.humidity < 5) {
+                                    wc.cell.energy = wc.cell.energy * 0.2 | 0;
+                                }
+                            } else if (wc.env.humidity < 0 || wc.env.humidity > 3) {
                                 var v = Math.abs(wc.env.humidity);
                                 wc.cell.energy -= v;
                             }
 
-                            if (wc.cell.energy <= 0 || wc.cell.age >= this.config.cLifeDuration) {
+                            let cLifeDuration = this.config.cLifeDuration
+                            if ((wc.cell.dna & CellDNA.DETRITOPHAGE) === CellDNA.DETRITOPHAGE) {
+                                cLifeDuration = cLifeDuration * 0.25 | 0
+                            }
+
+                            if (wc.cell.energy <= 0 || wc.cell.age >= cLifeDuration) {
                                 if ((wc.cell.dna & (CellDNA.PHYTOPHAGE | CellDNA.CARNIVORES)) > 0) {
                                     wc.env.pollution += Math.max(1, wc.cell.energy);
                                 } else {
@@ -503,6 +541,8 @@
                                         newCell.dna = wc.cell.dna;
                                         if ((this.dna & CellDNA.REPRODUCTIONBINARYFISSION) === CellDNA.REPRODUCTIONBINARYFISSION) {
                                             newCell.forceMutate();
+                                        } else {
+                                            newCell.updateColor();
                                         }
                                         this.wcells[freenPos].cell = newCell;
                                         this.wcells[freenPos].access = access;
@@ -542,11 +582,11 @@
                 this.color = "#fff";
                 this.movePatern = [0, 0];
                 this.energy = 10;
-                this.dna = CellDNA.PHOTOSYNTHESIS;
+                this.dna = CellDNA.AQUATIC;
                 this.age = 0;
-                this.updateColor();
                 this.root_parent = "";
                 this.generation = 0;
+                this.updateColor();
             }
 
             forceMutate() {
@@ -599,6 +639,9 @@
                     c = CellDNAColor.DETRITOPHAGE
                 }
                 if (c != null) {
+                    if ((this.dna & CellDNA.AQUATIC) === CellDNA.AQUATIC) {
+                        c = c.map(x => Math.max((x - 60), 0))
+                    }
                     this.color = rgb(c[0], c[1], c[2]);
                     return;
                 }
@@ -628,7 +671,7 @@
             canReproduct(cell) {
                 if (cell != null) {
                     if ((this.dna & CellDNA.REPRODUCTIONMATING) === CellDNA.REPRODUCTIONMATING) {
-                        if (this.matchingBits(cell.dna) >= 0.9) {
+                        if (this.matchingBits(cell.dna) >= 0.95) {
                             // return (this.root_parent == cell.root_parent);
                             return Math.abs(this.generation - cell.generation) <= 10
                         }
@@ -685,7 +728,7 @@
             }
         }
 
-        let world = new World(700, 700, 5, 10);
+        let world = new World(700, 700, 5, 150);
 
         function getMousePosition(canvas, event) {
             let rect = canvas.getBoundingClientRect();
