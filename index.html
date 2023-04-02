@@ -13,16 +13,30 @@
     .legend span::before {
         content: "⏺";
     }
+    
+    #canvas {
+        float: left;
+        clear: both;
+    }
+    
+    .clear {
+        clear: both;
+    }
+    
+    .logs {}
 </style>
 
 <body>
     <div>
-        <input type="button" value="Regenerate cells" onclick="onRegenerateClick()">
-        <input type="button" value="Continue" onclick="onConlinueClick()"> Duration:
+        <input type="button" value="[R]egenerate cells" onclick="onRegenerateClick()">
+        <input type="button" value="[SPACE]Continue" onclick="onConlinueClick()"> Duration:
         <span id="duration"></span> cells: <span id="cellcount"></span>
     </div>
     <canvas id="canvas" width="700" height="700"></canvas>
-    <div>
+    <div class="right logs">
+        <div id="l_world_stats"></div>
+    </div>
+    <div class="clear">
         <div class="legend">
             <span style="color: #0000ff;"></span>Water
             <span style="color: hsl(0, 0%, 42%);"></span>Ground
@@ -43,6 +57,7 @@
         let l_duration = document.getElementById("duration");
         let l_cellcount = document.getElementById("cellcount");
         let l_worldcell_info = document.getElementById("worldcell_info");
+        let l_world_stats = document.getElementById("l_world_stats");
 
         let canvas = document.getElementById("canvas");
         let ctx = canvas.getContext("2d");
@@ -220,6 +235,15 @@
             return bytes;
         }
 
+        function strToColor(str) {
+            var rB = strToUtf16Bytes(str);
+            let c = rB.reduce(function(a, b, i, list) {
+                if (i % 4 == 0) a.push(list[i] + list[i + 2]);
+                return a;
+            }, []);
+            return rgb(c[0], c[1], c[2]);
+        }
+
         function rgb(r, g, b) {
             return "#" + (1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1);
         }
@@ -333,17 +357,21 @@
                 }
                 html_element.innerText = JSON.stringify(wc) + "\n" + JSON.stringify(dna_str);
                 // console.log(JSON.stringify(wc), JSON.stringify(dna_str));
+            }
 
+            displayStats(html_element) {
+                html_element.innerHTML = "";
                 let stats = this.statistic();
                 let stats_clan_count = stats.length;
                 const ul = document.createElement("ul");
-                for (var i = 0; i < Math.min(5, stats_clan_count); i++) {
+                for (var i = 0; i < Math.min(35, stats_clan_count); i++) {
                     const node = document.createElement("ul");
                     const textnode = document.createTextNode(`${ stats[i][0]}: ${ stats[i][1]}`);
+                    node.style.color = strToColor(stats[i][0]);
                     node.appendChild(textnode);
                     ul.appendChild(node);
                 }
-                let p = document.createElement("p");
+                let p = document.createElement("div");
                 p.innerText = `Clans: ${stats_clan_count}`;
                 html_element.appendChild(p);
                 html_element.appendChild(ul);
@@ -400,13 +428,7 @@
                                 let k = Math.min(255, wc.cell.energy % 255);
                                 fillColor = rgb(255, (k * 2) % 255, k);
                             } else if (this.mapLayout == MapLayout.CLANS) {
-                                var rB = strToUtf16Bytes(wc.cell.gen_id);
-                                let c = rB.reduce(function(a, b, i, list) {
-                                    if (i % 4 == 0) a.push(list[i] + list[i + 2]);
-                                    return a;
-                                }, []);
-
-                                fillColor = rgb(c[0], c[1], c[2]);
+                                fillColor = strToColor(wc.cell.gen_id);
                             }
                         }
                     } else if (this.mapstate == WorldMapState.SHOWMAP) {
@@ -823,6 +845,8 @@
         function animate() {
             world.update();
             world.render(ctx);
+
+            world.displayStats(l_world_stats);
             requestAnimationFrame(animate);
         }
 
