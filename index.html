@@ -277,7 +277,6 @@
 
                 for (let i = 0; i < population; i++) {
                     let initCell = new Cell();
-                    initCell.root_parent = Math.random().toString(36).slice(2, 7);
                     initCell.forceMutate();
                     this.wcells[Math.floor(Math.random() * this.numCells)].cell = initCell;
                 }
@@ -305,6 +304,34 @@
                 }
                 html_element.innerText = JSON.stringify(wc) + "\n" + JSON.stringify(dna_str);
                 // console.log(JSON.stringify(wc), JSON.stringify(dna_str));
+
+                let stats = this.statistic();
+                let stats_clan_count = stats.length;
+                const ul = document.createElement("ul");
+                for (var i = 0; i < Math.min(5, stats_clan_count); i++) {
+                    const node = document.createElement("ul");
+                    const textnode = document.createTextNode(`${ stats[i][0]}: ${ stats[i][1]}`);
+                    node.appendChild(textnode);
+                    ul.appendChild(node);
+                }
+                let p = document.createElement("p");
+                p.innerText = `Clans: ${stats_clan_count}`;
+                html_element.appendChild(p);
+                html_element.appendChild(ul);
+            }
+
+            statistic() {
+                var items = Object.keys(this.stats).map(
+                    (key) => {
+                        return [key, this.stats[key]]
+                    });
+
+                items.sort(
+                    (first, second) => {
+                        return second[1] - first[1]
+                    }
+                );
+                return items;
             }
 
             // Render the World on the canvas
@@ -312,6 +339,7 @@
                 if (this.state != WorldControlState.PLAY) {
                     return;
                 }
+                this.stats = {};
                 this.duration++;
                 var count = 0;
                 var fillColor = "";
@@ -325,8 +353,7 @@
 
                     if (wc.env.humidity >= 5) { //water
                         fillColor = rgb(0, nn * 50 | 0, 255 - p);
-                    } else
-                    if (wc.env.humidity <= -5) {
+                    } else if (wc.env.humidity <= -5) {
                         fillColor = rgb(255, 255, 51); //sand
                     }
 
@@ -340,8 +367,7 @@
                                 let k = Math.min(255, wc.cell.energy % 255);
                                 fillColor = rgb(255, (k * 2) % 255, k);
                             } else if (this.mapLayout == MapLayout.CLANS) {
-                                // 
-                                var rB = strToUtf16Bytes(wc.cell.root_parent);
+                                var rB = strToUtf16Bytes(wc.cell.gen_id);
                                 let c = rB.reduce(function(a, b, i, list) {
                                     if (i % 4 == 0) a.push(list[i] + list[i + 2]);
                                     return a;
@@ -365,6 +391,8 @@
 
                     if (wc.cell != null) {
                         count++;
+                        // this.stats[wc.cell.gen_id] = this.stats[wc.cell.gen_id] | 0;
+                        this.stats[wc.cell.gen_id] = 1 + (this.stats[wc.cell.gen_id] | 0);
                     }
                     ctx.fillStyle = fillColor;
                     ctx.fillRect(wc.x * this.cellSize, wc.y * this.cellSize, this.cellSize, this.cellSize);
@@ -535,6 +563,7 @@
                                     if (freenPos != null) {
                                         let newCell = new Cell();
                                         newCell.root_parent = wc.cell.root_parent;
+                                        newCell.gen_id = wc.cell.gen_id;
                                         newCell.energy = Math.floor(wc.cell.energy / 2);
                                         newCell.generation = wc.cell.generation + 1;
                                         wc.cell.energy = newCell.energy;
@@ -584,9 +613,16 @@
                 this.energy = 10;
                 this.dna = CellDNA.AQUATIC;
                 this.age = 0;
-                this.root_parent = "";
+                this.root_parent = Math.random().toString(36).slice(2, 8);
                 this.generation = 0;
                 this.updateColor();
+                this.genID();
+            }
+
+            genID() {
+                // this.gen_id the same as this.generation will identify the same "type" of the cell
+                // this.gen_id used for "clans" color generation
+                this.gen_id = Math.random().toString(36).slice(2, 8);
             }
 
             forceMutate() {
@@ -602,6 +638,8 @@
                     this.validateDNA(randomDNA);
                 }
                 this.updateColor();
+
+                this.genID();
             }
 
             mutate(chance) {
