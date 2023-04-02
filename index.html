@@ -102,15 +102,12 @@
                     this.lerp(u, this.grad(this.permutation[X][Y + 1], x, y - 1), // RESULTS
                         this.grad(this.permutation[X + 1][Y + 1], x - 1, y - 1))));
             }
-
         }
-
 
 
         let noise = new Noise();
         let noiseSize = 3;
         // ========
-
 
 
         function showCells(layout) {
@@ -131,6 +128,7 @@
         /////
 
         let CellDNA = {
+            NONE: 1 << 0,
             PHOTOSYNTHESIS: 1 << 1,
             DETRITOPHAGE: 1 << 2,
             PHYTOPHAGE: 1 << 3,
@@ -221,7 +219,6 @@
             }
             return bytes;
         }
-
 
         function rgb(r, g, b) {
             return "#" + (1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1);
@@ -352,6 +349,10 @@
                 html_element.appendChild(ul);
             }
 
+            play_pause() {
+                this.switchControlState((this.state == WorldControlState.PAUSE) ? WorldControlState.PLAY : WorldControlState.PAUSE);
+            }
+
             statistic() {
                 var items = Object.keys(this.stats).map(
                     (key) => {
@@ -410,7 +411,7 @@
                         }
                     } else if (this.mapstate == WorldMapState.SHOWMAP) {
                         if (this.mapLayout == MapLayout.TERRAIN) {
-                            fillColor = rgb(p, p, p);
+                            // fillColor = rgb(p, p, p);
                         } else if (this.mapLayout == MapLayout.POLLUTION) {
                             fillColor = rgb(255, 255, 255); //pink
                             if (wc.env.pollution > 0) {
@@ -643,7 +644,7 @@
                 this.color = "#fff";
                 this.movePatern = [0, 0];
                 this.energy = 10;
-                this.dna = CellDNA.AQUATIC;
+                this.dna = CellDNA.NONE;
                 this.age = 0;
                 this.root_parent = Math.random().toString(36).slice(2, 8);
                 this.generation = 0;
@@ -715,7 +716,6 @@
                     this.color = rgb(c[0], c[1], c[2]);
                     return;
                 }
-
 
                 let keys = Object.keys(CellDNA);
                 for (let k of keys) {
@@ -811,6 +811,14 @@
         canvas.addEventListener("mousedown", function(e) {
             getMousePosition(canvas, e);
         });
+
+        document.addEventListener('keydown', function(event) {
+            if (event.keyCode == 32) {
+                world.play_pause();
+            } else if (event.keyCode == 82) {
+                world.regeneratePopulation(300);
+            }
+        }, false);
 
         function animate() {
             world.update();
